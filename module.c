@@ -1,3 +1,4 @@
+#define REDISMODULE_EXPERIMENTAL_API
 #include<time.h>
 #include "./redismodule.h"
 #include "./rmutil/util.h"
@@ -627,6 +628,30 @@ int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   return REDISMODULE_ERR;
 }
 
+mstime_t timeout = 5000;
+
+void TimerHandler(RedisModuleCtx *ctx, void *data) {
+  RedisModule_Log(ctx, "warning", "aggregate timeout %lld", timeout);
+  RedisModule_CreateTimer(ctx, timeout, TimerHandler, NULL);
+}
+
+/*
+ * AB.TIMER [timeout]
+*/
+int TimerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+  if (argc != 2) {
+    return RedisModule_WrongArity(ctx);
+  }
+
+  // read timeout
+  mstime_t t = (mstime_t)atoi(RedisModule_StringPtrLen(argv[1], NULL));
+  if (t > 100) {
+    timeout = t;
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+  }
+  return RedisModule_WrongArity(ctx);
+
+}
 int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // Register the module itself
@@ -655,6 +680,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // register ab.target - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.target", TargetCommand);
+
+  // register ab.timer - using the shortened utility registration macro
+  // RMUtil_RegisterReadCmd(ctx, "ab.timer", TimerCommand);
+  RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.timer", TimerCommand);
+  // created timer
+  RedisModule_CreateTimer(ctx, timeout, TimerHandler, NULL);
 
   return REDISMODULE_OK;
 }

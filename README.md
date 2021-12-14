@@ -21,6 +21,11 @@
 > only have varname, get targets for one test by name
 > give other optional params, set target for this test
 
+### alias
+
+1. AB.VAR  --> AB.TEST
+2. AB.VALUE  --> AB.VERSION
+
 ## example
 ```
 AB.LAYER 获取所有的层，包含创建层的时间(get all layers)
@@ -42,5 +47,5 @@ AB.TARGET 获取所有指标 (get all targets for system)
 -[ ] AB.TRACK (save user target)
 -[ ] AB.RATE (calc uv + pv + target + min/max/mean/std)
 -[ ] AB.TRAFIC (get pv and uv data by day)
-
+-[ ] using timer to aggregate data for every task
 
