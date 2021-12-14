@@ -13,10 +13,4 @@ AB.VERSION 获取所有的版本
 
 
 
-hset test
-
-
-testname
-  layer layer1
-  layer_weight 100
 
