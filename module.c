@@ -9,7 +9,7 @@
 */
 int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
-  RedisModule_Log(ctx, "warning", "argc %d", argc);
+  // RedisModule_Log(ctx, "warning", "argc %d", argc);
 
   if (argc < 1 ) {
     return RedisModule_WrongArity(ctx);
@@ -18,10 +18,10 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   if (argc == 1) {
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "ccccccccccccc",
+        ctx, "SORT", "ccccccccccccccc",
         "ab:versions", "BY", "ab:version:*->updated",
         "GET", "#", "GET", "ab:version:*->name", "GET", "ab:version:*->test",
-        "GET", "ab:version:*->weight", "GET", "ab:version:*->updated"
+        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
@@ -35,10 +35,10 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     // SORT ab:version:test1 BY ab:version:*->updated get # get ab:version:*->name get ab:version:*->weight get ab:version:*->value
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "scccccccccccc",
+        ctx, "SORT", "scccccccccccccc",
         test_key, "BY", "ab:version:*->updated",
         "GET", "#", "GET", "ab:version:*->name", "GET", "ab:version:*->test",
-        "GET", "ab:version:*->weight", "GET", "ab:version:*->updated"
+        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
@@ -66,6 +66,7 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModuleCallReply *rep =
       RedisModule_Call(ctx, "HSET", "scscsclclcs", version, "name", name ? name : version, "test", argv[1], "weight", weight, "updated", ts, "value", value);
   RMUTIL_ASSERT_NOERROR(ctx, rep);
+  RedisModule_Call(ctx, "HSETNX", "scl", version, "created", ts);
 
   RedisModuleCallReply *srep =
       RedisModule_Call(ctx, "ZADD", "ccls", "ab:versions", "NX", ts, value);
@@ -93,7 +94,7 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 */
 int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
-  RedisModule_Log(ctx, "warning", "argc %d", argc);
+  // RedisModule_Log(ctx, "warning", "argc %d", argc);
 
   if (argc < 1 ) {
     return RedisModule_WrongArity(ctx);
@@ -187,8 +188,9 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   // RedisModule_Log(ctx, "warning", "weight %lld", weight);
 
   RedisModuleCallReply *rep =
-      RedisModule_Call(ctx, "HSET", "scscsclclcscs", var, "name", name ? name : var, "layer", layer, "weight", weight, "updated", ts, "type", type, "default", default_value);
+    RedisModule_Call(ctx, "HSET", "scscsclclcscs", var, "name", name ? name : var, "layer", layer, "weight", weight, "updated", ts, "type", type, "default", default_value);
   RMUTIL_ASSERT_NOERROR(ctx, rep);
+  RedisModule_Call(ctx, "HSETNX", "scl", var, "created", ts);
 
   RedisModuleCallReply *dvrep =
       RedisModule_Call(ctx, "AB.VERSION", "scscl", argv[1], "VALUE", default_value, "WEIGHT", 100);
@@ -225,31 +227,30 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 */
 int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
-  RedisModule_Log(ctx, "warning", "argc %d", argc);
-  // we must have at least 4 args
+  // RedisModule_Log(ctx, "warning", "argc %d", argc);
   if (argc < 1 || argc > 2) {
     return RedisModule_WrongArity(ctx);
   }
 
   if (argc == 1) {
-      // ZRANGE ab:layers -inf inf WITHSCORES
-      RedisModuleCallReply *arep =
-          RedisModule_Call(ctx, "ZRANGE", "ccccc", "ab:layers", "-inf", "inf", "BYSCORE", "WITHSCORES");
-      RMUTIL_ASSERT_NOERROR(ctx, arep);
+    // ZRANGE ab:layers -inf inf WITHSCORES
+    RedisModuleCallReply *arep =
+        RedisModule_Call(ctx, "ZRANGE", "ccccc", "ab:layers", "-inf", "inf", "BYSCORE", "WITHSCORES");
+    RMUTIL_ASSERT_NOERROR(ctx, arep);
 
-      return RedisModule_ReplyWithCallReply(ctx, arep);
+    return RedisModule_ReplyWithCallReply(ctx, arep);
   } 
 
   RedisModule_AutoMemory(ctx);
 
   if (argc == 2) {
-      RedisModuleString *layer_key = RedisModule_CreateStringPrintf(ctx, "ab:layer:%s", RedisModule_StringPtrLen(argv[1], NULL));
+    RedisModuleString *layer_key = RedisModule_CreateStringPrintf(ctx, "ab:layer:%s", RedisModule_StringPtrLen(argv[1], NULL));
 
-      RedisModuleCallReply *arep =
-          RedisModule_Call(ctx, "ZRANGE", "scccc", layer_key, "-inf", "inf", "BYSCORE", "WITHSCORES");
-      RMUTIL_ASSERT_NOERROR(ctx, arep);
+    RedisModuleCallReply *arep =
+      RedisModule_Call(ctx, "ZRANGE", "scccc", layer_key, "-inf", "inf", "BYSCORE", "WITHSCORES");
+    RMUTIL_ASSERT_NOERROR(ctx, arep);
 
-      return RedisModule_ReplyWithCallReply(ctx, arep);
+    return RedisModule_ReplyWithCallReply(ctx, arep);
   }
 
   return REDISMODULE_ERR;
