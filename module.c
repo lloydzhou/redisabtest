@@ -18,10 +18,10 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   if (argc == 1) {
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "ccccccccccccccc",
-        "ab:versions", "BY", "ab:version:*->updated",
+        ctx, "SORT", "cccccccccccccccc",
+        "ab:versions", "BY", "ab:version:*->created",
         "GET", "#", "GET", "ab:version:*->name", "GET", "ab:version:*->test",
-        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated"
+        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated", "DESC"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
@@ -35,10 +35,10 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     // SORT ab:version:test1 BY ab:version:*->updated get # get ab:version:*->name get ab:version:*->weight get ab:version:*->value
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "scccccccccccccc",
-        test_key, "BY", "ab:version:*->updated",
+        ctx, "SORT", "sccccccccccccccc",
+        test_key, "BY", "ab:version:*->created",
         "GET", "#", "GET", "ab:version:*->name", "GET", "ab:version:*->test",
-        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated"
+        "GET", "ab:version:*->weight", "GET", "ab:version:*->created", "GET", "ab:version:*->updated", "DESC"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
@@ -102,7 +102,12 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
   if (argc == 1) {
     RedisModuleCallReply *arep =
-      RedisModule_Call(ctx, "ZRANGE", "ccccc", "ab:tests", "-inf", "inf", "BYSCORE", "WITHSCORES");
+      RedisModule_Call(
+        ctx, "SORT", "cccccccccccccccc",
+        "ab:tests", "BY", "ab:var:*->created",
+        "GET", "#", "GET", "ab:var:*->name", "GET", "ab:var:*->layer",
+        "GET", "ab:var:*->weight", "GET", "ab:var:*->created", "GET", "ab:var:*->updated", "DESC"
+      );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
     return RedisModule_ReplyWithCallReply(ctx, arep);
