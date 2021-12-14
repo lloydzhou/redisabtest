@@ -200,6 +200,126 @@ int UserVersionCommand(RedisModuleCtx *ctx, RedisModuleString *test, RedisModule
 }
 
 /*
+ * AB.TARGET <testname> [TARGET <target>]
+*/
+int TargetCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+
+  // RedisModule_Log(ctx, "warning", "argc %d", argc);
+
+  if (argc < 1 ) {
+    return RedisModule_WrongArity(ctx);
+  }
+
+  if (argc == 1) {
+    RedisModuleCallReply *arep =
+      RedisModule_Call(
+        ctx, "SORT", "cccccccccccccccc",
+        "ab:targets", "BY", "*->created",
+        "GET", "#", "GET", "*->name", "GET", "*->test",
+        "GET", "*->value", "GET", "*->created", "GET", "*->updated", "DESC"
+      );
+    RMUTIL_ASSERT_NOERROR(ctx, arep);
+
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+      RedisModule_ReplyWithSimpleString(ctx, "header");
+
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithSimpleString(ctx, "target");
+      RedisModule_ReplyWithSimpleString(ctx, "name");
+      RedisModule_ReplyWithSimpleString(ctx, "test");
+      RedisModule_ReplyWithSimpleString(ctx, "value");
+      RedisModule_ReplyWithSimpleString(ctx, "created");
+      RedisModule_ReplyWithSimpleString(ctx, "updated");
+      RedisModule_ReplySetArrayLength(ctx, 6);
+
+      RedisModule_ReplyWithSimpleString(ctx, "body");
+      RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplySetArrayLength(ctx, 4);
+    return REDISMODULE_OK;
+    // return RedisModule_ReplyWithCallReply(ctx, arep);
+  }
+
+  RedisModule_AutoMemory(ctx);
+
+  RedisModuleString *test_key = RedisModule_CreateStringPrintf(ctx, "ab:target:%s", RedisModule_StringPtrLen(argv[1], NULL));
+  if (argc == 2) {
+    // SORT ab:version:test1 BY ab:version:*->updated get # get ab:version:*->name get ab:version:*->weight get ab:version:*->value
+    RedisModuleCallReply *arep =
+      RedisModule_Call(
+        ctx, "SORT", "sccccccccccccccc",
+        test_key, "BY", "*->created",
+        "GET", "#", "GET", "*->name", "GET", "*->test",
+        "GET", "*->value", "GET", "*->created", "GET", "*->updated", "DESC"
+      );
+    RMUTIL_ASSERT_NOERROR(ctx, arep);
+
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+      RedisModule_ReplyWithSimpleString(ctx, "header");
+
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithSimpleString(ctx, "target");
+      RedisModule_ReplyWithSimpleString(ctx, "name");
+      RedisModule_ReplyWithSimpleString(ctx, "test");
+      RedisModule_ReplyWithSimpleString(ctx, "value");
+      RedisModule_ReplyWithSimpleString(ctx, "created");
+      RedisModule_ReplyWithSimpleString(ctx, "updated");
+      RedisModule_ReplySetArrayLength(ctx, 6);
+
+      RedisModule_ReplyWithSimpleString(ctx, "body");
+      RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplySetArrayLength(ctx, 4);
+    return REDISMODULE_OK;
+    // return RedisModule_ReplyWithCallReply(ctx, arep);
+  }
+
+  RedisModuleString *value = NULL;
+  RMUtil_ParseArgsAfter("VALUE", argv, argc, "s", &value);
+  if (value == NULL) {
+    RMUtil_ParseArgsAfter("TARGET", argv, argc, "s", &value);
+  }
+  if (value == NULL && argc == 3) {
+    value = argv[2];
+  }
+  if (value == NULL) {
+    RedisModule_Log(ctx, "warning", "No target found");
+    return RedisModule_ReplyWithError(ctx, "NEED VALUE");
+  }
+  RedisModuleString *target = RedisModule_CreateStringPrintf(ctx, "ab:target:%s:%s", RedisModule_StringPtrLen(argv[1], NULL), RedisModule_StringPtrLen(value, NULL));
+  // RedisModule_Log(ctx, "warning", "target %s", RedisModule_StringPtrLen(target, NULL));
+
+  long long ts = RedisModule_Milliseconds();
+
+  RedisModuleString *name = NULL;
+  RMUtil_ParseArgsAfter("NAME", argv, argc, "s", &name);
+
+  RedisModuleCallReply *rep =
+      RedisModule_Call(ctx, "HSET", "scscsclcs", target, "name", name ? name : target, "test", argv[1], "updated", ts, "value", value);
+  RMUTIL_ASSERT_NOERROR(ctx, rep);
+  RedisModule_Call(ctx, "HSETNX", "scl", target, "created", ts);
+
+  RedisModuleCallReply *srep =
+      RedisModule_Call(ctx, "ZADD", "ccls", "ab:targets", "NX", ts, target);
+  RMUTIL_ASSERT_NOERROR(ctx, srep);
+
+  RedisModuleCallReply *lzrep =
+      RedisModule_Call(ctx, "ZADD", "scls", test_key, "NX", ts, target);
+  RMUTIL_ASSERT_NOERROR(ctx, lzrep);
+
+  // if the value was null before - we just return null
+  if (RedisModule_CallReplyType(rep) == REDISMODULE_REPLY_NULL) {
+    RedisModule_ReplyWithNull(ctx);
+    return REDISMODULE_OK;
+  }
+
+  // forward the reply to the client
+  RedisModule_ReplyWithCallReply(ctx, rep);
+  return REDISMODULE_OK;
+}
+
+
+/*
  * AB.VERSION <testname> [VALUE <version>] [WEIGHT <weight>] [NAME <version_name>]
 */
 int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -213,14 +333,32 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   if (argc == 1) {
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "cccccccccccccccc",
+        ctx, "SORT", "cccccccccccccccccc",
         "ab:versions", "BY", "*->created",
-        "GET", "#", "GET", "*->name", "GET", "*->test",
+        "GET", "#", "GET", "*->name", "GET", "*->test", "GET", "*->value",
         "GET", "*->weight", "GET", "*->created", "GET", "*->updated", "DESC"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
-    return RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+      RedisModule_ReplyWithSimpleString(ctx, "header");
+
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithSimpleString(ctx, "version");
+      RedisModule_ReplyWithSimpleString(ctx, "name");
+      RedisModule_ReplyWithSimpleString(ctx, "test");
+      RedisModule_ReplyWithSimpleString(ctx, "value");
+      RedisModule_ReplyWithSimpleString(ctx, "weight");
+      RedisModule_ReplyWithSimpleString(ctx, "created");
+      RedisModule_ReplyWithSimpleString(ctx, "updated");
+      RedisModule_ReplySetArrayLength(ctx, 7);
+
+      RedisModule_ReplyWithSimpleString(ctx, "body");
+      RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplySetArrayLength(ctx, 4);
+    return REDISMODULE_OK;
+    // return RedisModule_ReplyWithCallReply(ctx, arep);
   }
 
   RedisModule_AutoMemory(ctx);
@@ -230,18 +368,39 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     // SORT ab:version:test1 BY ab:version:*->updated get # get ab:version:*->name get ab:version:*->weight get ab:version:*->value
     RedisModuleCallReply *arep =
       RedisModule_Call(
-        ctx, "SORT", "sccccccccccccccc",
+        ctx, "SORT", "sccccccccccccccccc",
         test_key, "BY", "*->created",
-        "GET", "#", "GET", "*->name", "GET", "*->test",
+        "GET", "#", "GET", "*->name", "GET", "*->test", "GET", "*->value",
         "GET", "*->weight", "GET", "*->created", "GET", "*->updated", "DESC"
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
-    return RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+      RedisModule_ReplyWithSimpleString(ctx, "header");
+
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithSimpleString(ctx, "version");
+      RedisModule_ReplyWithSimpleString(ctx, "name");
+      RedisModule_ReplyWithSimpleString(ctx, "test");
+      RedisModule_ReplyWithSimpleString(ctx, "value");
+      RedisModule_ReplyWithSimpleString(ctx, "weight");
+      RedisModule_ReplyWithSimpleString(ctx, "created");
+      RedisModule_ReplyWithSimpleString(ctx, "updated");
+      RedisModule_ReplySetArrayLength(ctx, 7);
+
+      RedisModule_ReplyWithSimpleString(ctx, "body");
+      RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplySetArrayLength(ctx, 4);
+    return REDISMODULE_OK;
+    // return RedisModule_ReplyWithCallReply(ctx, arep);
   }
 
   RedisModuleString *value = NULL;
   RMUtil_ParseArgsAfter("VALUE", argv, argc, "s", &value);
+  if (value == NULL && argc == 3) {
+    value = argv[2];
+  }
   if (value == NULL) {
     RedisModule_Log(ctx, "warning", "No version found");
     return RedisModule_ReplyWithError(ctx, "NEED VALUE");
@@ -305,7 +464,24 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
       );
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
-    return RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+
+      RedisModule_ReplyWithSimpleString(ctx, "header");
+
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithSimpleString(ctx, "test");
+      RedisModule_ReplyWithSimpleString(ctx, "name");
+      RedisModule_ReplyWithSimpleString(ctx, "layer");
+      RedisModule_ReplyWithSimpleString(ctx, "weight");
+      RedisModule_ReplyWithSimpleString(ctx, "created");
+      RedisModule_ReplyWithSimpleString(ctx, "updated");
+      RedisModule_ReplySetArrayLength(ctx, 6);
+
+      RedisModule_ReplyWithSimpleString(ctx, "body");
+      RedisModule_ReplyWithCallReply(ctx, arep);
+    RedisModule_ReplySetArrayLength(ctx, 4);
+    return REDISMODULE_OK;
+    // return RedisModule_ReplyWithCallReply(ctx, arep);
   }
 
   RedisModule_AutoMemory(ctx);
@@ -468,11 +644,17 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   // register ab.test - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.test", TestCommand);
 
+  // register ab.var - using the shortened utility registration macro
+  RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.var", TestCommand);
+
   // register ab.version - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.version", VersionCommand);
 
   // register ab.value - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.value", VersionCommand);
+
+  // register ab.target - using the shortened utility registration macro
+  RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.target", TargetCommand);
 
   return REDISMODULE_OK;
 }
