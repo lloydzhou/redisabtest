@@ -35,4 +35,10 @@ clean:
 dev: clean rmutil redisab.so
 	redis-server --port 7777 --loadmodule ./redisab.so
 
+build:
+	docker build -t lloydzhou/redisab -f Dockerfile .
+
+push:
+	docker push lloydzhou/redisab
+
 FORCE:
