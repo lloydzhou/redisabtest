@@ -224,7 +224,7 @@ int UserVersionCommand(RedisModuleCtx *ctx, RedisModuleString *test, RedisModule
     value = default_value ? default_value : RedisModule_CreateString(ctx, "0", strlen("0"));
   }
 
-  RedisModuleString *uv_key = RedisModule_CreateStringPrintf(ctx, "ab:uv:%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
+  RedisModuleString *uv_key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s:%s:uv", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
   // pv inc by user_id
   RMUTIL_ASSERT_NOERROR(ctx, RedisModule_Call(ctx, "ZINCRBY", "sls", uv_key, 1, user_id));
 
@@ -591,6 +591,70 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 
 /*
+ * AB.TRACK <user_id> [target inc] [target inc] [target inc]
+*/
+int TrackCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+  // RedisModule_Log(ctx, "warning", "argc %d", argc);
+  if (argc < 4 || argc % 2 == 1) {
+    return RedisModule_WrongArity(ctx);
+  }
+
+  RedisModule_AutoMemory(ctx);
+
+  RedisModuleString *user_id = argv[1];
+
+  RedisModuleCallReply *trep = RedisModule_Call(ctx, "sort", "ccccccccc", "ab:targets", "by", "*", "get", "#", "get", "*->test", "get", "*->value");
+
+  time_t _ts = RedisModule_Milliseconds() / 1000;
+  struct tm tm = *localtime(&_ts);
+  char day[100];
+  strftime(day, sizeof(day)-1, "%Y-%m-%d", &tm);
+  // RedisModule_Log(ctx, "warning", "day %s", day);
+
+  int i, j;
+  for (i = 2; i < argc; i += 2) {
+    RedisModuleString *target = argv[i];
+    long long inc = (long long)atoi(RedisModule_StringPtrLen(argv[i + 1], NULL));
+    // RedisModule_Log(ctx, "warning", "target %s %s %lld", RedisModule_StringPtrLen(user_id, NULL), RedisModule_StringPtrLen(target, NULL), inc);
+    if (inc > 0) {
+      for (j = 0; j < RedisModule_CallReplyLength(trep); j += 3) {
+        RedisModuleCallReply *t = RedisModule_CallReplyArrayElement(trep, j+1);
+        RedisModuleString *ttest = RedisModule_CreateStringFromCallReply(t);
+        // RedisModule_Log(ctx, "warning", "target test name %s", RedisModule_StringPtrLen(ttest, NULL));
+        RedisModuleString *ttarget = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(trep, j+2));
+        // RedisModule_Log(ctx, "warning", "target %s ttarget %s", RedisModule_StringPtrLen(target, NULL), RedisModule_StringPtrLen(ttarget, NULL));
+        if (RMUtil_StringEquals(target, ttarget)) {
+          // get value by user_id and test
+          RedisModuleString *user_version = RedisModule_CreateStringPrintf(ctx, "ab:user:version:%s", RedisModule_StringPtrLen(ttest, NULL));
+          RedisModuleCallReply *value_rep = RedisModule_Call(ctx, "HGET", "ss", user_version, user_id);
+          if (RedisModule_CallReplyType(value_rep) == REDISMODULE_REPLY_STRING) {
+            RedisModuleString *value = RedisModule_CreateStringFromCallReply(value_rep);
+            // RedisModule_Log(ctx, "warning", "target value %s", RedisModule_StringPtrLen(value, NULL));
+            // start to store target inc
+            // red:sadd("days:" .. var_name, today)
+            RedisModuleString *days_key = RedisModule_CreateStringPrintf(ctx, "ab:days:%s", RedisModule_StringPtrLen(ttest, NULL));
+            RMUTIL_ASSERT_NOERROR(ctx, RedisModule_Call(ctx, "SADD", "sc", days_key, day));
+            // red:hincrby("day:" .. today, key .. ":pv", 1)
+            RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "%s:%s:%s", RedisModule_StringPtrLen(ttest, NULL), RedisModule_StringPtrLen(value, NULL), RedisModule_StringPtrLen(target, NULL));
+            RedisModuleString *day_key = RedisModule_CreateStringPrintf(ctx, "ab:day:%s", day);
+            RedisModuleString *day_value = RedisModule_CreateStringPrintf(ctx, "%s:pv", RedisModule_StringPtrLen(key, NULL));
+            RMUTIL_ASSERT_NOERROR(ctx, RedisModule_Call(ctx, "HINCRBY", "ssl", day_key, day_value, 1));
+            // track_key = ab:version:<test>:<value>:<target>:track
+            RedisModuleString *track_key = RedisModule_CreateStringPrintf(
+              ctx, "ab:version:%s:track", RedisModule_StringPtrLen(key, NULL)
+            );
+            // red:zincrby("track:" .. key, inc, user_id)
+            RMUTIL_ASSERT_NOERROR(ctx, RedisModule_Call(ctx, "ZINCRBY", "sls", track_key, 1, user_id));
+          }
+        }
+      }
+    }
+  }
+  return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
+
+/*
  * AB.LAYER [<layername>]
 */
 int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -679,7 +743,7 @@ void aggregate(RedisModuleCtx *ctx, RedisModuleString *key, long long *count, lo
     }
   } while(!RMUtil_StringEquals(cursor, C2S(ctx, "0")));
   if (*count > 1) {
-    *std = sqrt(s / *count - 1);
+    *std = sqrt(s / (*count - 1));
   }
   return;
 }
@@ -708,6 +772,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
       const char *ctarget = RedisModule_StringPtrLen(target, NULL);
       if (RMUtil_StringEquals(vtest, ttest)) {
         // RedisModule_Log(ctx, "warning", "version test %s eq target test %s", RedisModule_StringPtrLen(vtest, NULL), RedisModule_StringPtrLen(ttest, NULL));
+        // track_key = ab:version:<test>:<value>:<target>:track
         RedisModuleString *track_key = RedisModule_CreateStringPrintf(
           ctx, "%s:%s:track",
           RedisModule_StringPtrLen(version, NULL),
@@ -715,7 +780,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
         );
         // RedisModule_Log(ctx, "warning", "aggregate track %s", RedisModule_StringPtrLen(track_key, NULL));
         aggregate(ctx, track_key, &uv, &pv, &min, &max, &mean, &std);
-        // RedisModule_Log(ctx, "warning", "aggregate track %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+        RedisModule_Log(ctx, "warning", "aggregate track %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
         RedisModule_Call(
           ctx, "HSET", "sslslslslssss",
           version,
@@ -726,7 +791,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
           RedisModule_CreateStringPrintf(ctx, "%s:mean", ctarget), RedisModule_CreateStringFromDouble(ctx, mean),
           RedisModule_CreateStringPrintf(ctx, "%s:std", ctarget), RedisModule_CreateStringFromDouble(ctx, std)
         );
-        // RedisModule_Log(ctx, "warning", "aggregate track save version %s %lld %lld %lld %lld %f %f", RedisModule_StringPtrLen(version, NULL), uv, pv, min, max, mean, std);
+        RedisModule_Log(ctx, "warning", "aggregate track save version %s %lld %lld %lld %lld %f %f", RedisModule_StringPtrLen(version, NULL), uv, pv, min, max, mean, std);
 
         target_count += 1;
       }
@@ -748,7 +813,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
         "uv:mean", RedisModule_CreateStringFromDouble(ctx, mean),
         "uv:std", RedisModule_CreateStringFromDouble(ctx, std)
       );
-      // RedisModule_Log(ctx, "warning", "aggregate uv %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+      RedisModule_Log(ctx, "warning", "aggregate uv %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
     }
   }
   RedisModule_ThreadSafeContextUnlock(ctx);
@@ -782,6 +847,9 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // register ab.target - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.target", TargetCommand);
+
+  // register ab.track - using the shortened utility registration macro
+  RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.track", TrackCommand);
 
   // register ab.timer - using the shortened utility registration macro
   // RMUtil_RegisterReadCmd(ctx, "ab.timer", TimerCommand);

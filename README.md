@@ -21,6 +21,9 @@
 > only have varname, get targets for one test by name
 > give other optional params, set target for this test
 
+### AB.TRACK [userid] [target inc] [target inc] ...
+> save target for current user
+
 ### alias
 
 1. AB.VAR  --> AB.TEST
@@ -39,12 +42,13 @@ AB.VERSION 获取所有的版本 (get all versions)
 AB.TARGET test1 VALUE target1 设置指标 (set target for test)
 AB.TARGET test1 获取test1所有指标 (get targets for test)
 AB.TARGET 获取所有指标 (get all targets for system)
+AB.TRACK userid target1 1 保存指标 (save target for current user)
 ```
 
 ## TODO
 
 - [x] AB.TARGET (add target for test)
-- [ ] AB.TRACK (save user target)
+- [x] AB.TRACK (save user target)
 - [ ] AB.RATE (calc uv + pv + target + min/max/mean/std)
 - [ ] AB.TRAFIC (get pv and uv data by day)
 - [x] using timer to aggregate data for every task
