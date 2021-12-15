@@ -38,7 +38,7 @@ dev: clean rmutil redisab.so
 build:
 	docker build -t lloydzhou/redisab -f Dockerfile .
 
-push:
+push: build
 	docker push lloydzhou/redisab
 
 FORCE:
