@@ -689,6 +689,45 @@ int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 /*
+ * AB.RATE testname
+*/
+int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+  if (argc != 2) {
+    return RedisModule_WrongArity(ctx);
+  }
+  RedisModule_AutoMemory(ctx);
+  RedisModuleString *test = argv[1];
+
+  RedisModuleString *version_key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s", RedisModule_StringPtrLen(test, NULL));
+  RedisModuleCallReply *versions = RedisModule_Call(ctx, "SORT", "scccc", version_key, "BY", "*->created", "GET", "*->value");
+  RMUTIL_ASSERT_NOERROR(ctx, versions);
+
+  RedisModuleString *target_key = RedisModule_CreateStringPrintf(ctx, "ab:target:%s", RedisModule_StringPtrLen(test, NULL));
+  RedisModuleCallReply *targets = RedisModule_Call(ctx, "SORT", "scccc", target_key, "BY", "*->created", "GET", "*->value");
+  RMUTIL_ASSERT_NOERROR(ctx, targets);
+
+  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+  RedisModule_ReplyWithSimpleString(ctx, "targets");
+  RedisModule_ReplyWithCallReply(ctx, targets);
+  int i = 0;
+  for (i = 0; i < RedisModule_CallReplyLength(versions); i += 2) {
+    RedisModuleString *value = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 1));
+    RedisModule_ReplyWithSimpleString(ctx, "version");
+    RedisModule_ReplyWithString(ctx, value);
+
+    RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
+    // RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
+    RedisModuleCallReply *rep = RedisModule_Call(ctx, "HGETALL", "s", key);
+    RMUTIL_ASSERT_NOERROR(ctx, rep);
+    RedisModule_ReplyWithSimpleString(ctx, "data");
+    RedisModule_ReplyWithCallReply(ctx, rep);
+  }
+  RedisModule_ReplySetArrayLength(ctx, 2 + i * 2);
+
+  return REDISMODULE_OK;
+}
+
+/*
  * AB.TRAFFIC testname
 */
 int TrafficCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -887,6 +926,9 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // register ab.traffic - using the shortened utility registration macro
   RMUtil_RegisterReadCmd(ctx, "ab.traffic", TrafficCommand);
+
+  // register ab.rate - using the shortened utility registration macro
+  RMUtil_RegisterReadCmd(ctx, "ab.rate", RateCommand);
 
   // register ab.timer - using the shortened utility registration macro
   // RMUtil_RegisterReadCmd(ctx, "ab.timer", TimerCommand);
