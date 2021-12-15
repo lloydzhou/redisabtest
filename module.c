@@ -780,7 +780,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
         );
         // RedisModule_Log(ctx, "warning", "aggregate track %s", RedisModule_StringPtrLen(track_key, NULL));
         aggregate(ctx, track_key, &uv, &pv, &min, &max, &mean, &std);
-        RedisModule_Log(ctx, "warning", "aggregate track %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+        // RedisModule_Log(ctx, "warning", "aggregate track %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
         RedisModule_Call(
           ctx, "HSET", "sslslslslssss",
           version,
@@ -791,7 +791,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
           RedisModule_CreateStringPrintf(ctx, "%s:mean", ctarget), RedisModule_CreateStringFromDouble(ctx, mean),
           RedisModule_CreateStringPrintf(ctx, "%s:std", ctarget), RedisModule_CreateStringFromDouble(ctx, std)
         );
-        RedisModule_Log(ctx, "warning", "aggregate track save version %s %lld %lld %lld %lld %f %f", RedisModule_StringPtrLen(version, NULL), uv, pv, min, max, mean, std);
+        // RedisModule_Log(ctx, "warning", "aggregate track save version %s %lld %lld %lld %lld %f %f", RedisModule_StringPtrLen(version, NULL), uv, pv, min, max, mean, std);
 
         target_count += 1;
       }
@@ -813,7 +813,7 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
         "uv:mean", RedisModule_CreateStringFromDouble(ctx, mean),
         "uv:std", RedisModule_CreateStringFromDouble(ctx, std)
       );
-      RedisModule_Log(ctx, "warning", "aggregate uv %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+      // RedisModule_Log(ctx, "warning", "aggregate uv %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
     }
   }
   RedisModule_ThreadSafeContextUnlock(ctx);
