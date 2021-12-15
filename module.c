@@ -1,14 +1,19 @@
 #define REDISMODULE_EXPERIMENTAL_API
 #include <time.h>
+#include <math.h>
 #include "./redismodule.h"
 #include "./rmutil/util.h"
 #include "./rmutil/strings.h"
 #include "./rmutil/test_util.h"
+#include "./rmutil/periodic.c"
 #include "./murmurhash.c"
+
 
 #define hash(key) (unsigned) murmurhash(key, (uint32_t) strlen(key), (uint32_t) atoi(seed));
 
 #define C2S(ctx, s) RedisModule_CreateString(ctx, s, strlen(s))
+
+static struct RMUtilTimer *interval_timer;
 
 
 int ListResponse(RedisModuleCtx *ctx, const char *fmt, ...) {
@@ -619,13 +624,6 @@ int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   return REDISMODULE_ERR;
 }
 
-mstime_t timeout = 5000;
-
-void TimerHandler(RedisModuleCtx *ctx, void *data) {
-  RedisModule_Log(ctx, "warning", "aggregate timeout %lld", timeout);
-  RedisModule_CreateTimer(ctx, timeout, TimerHandler, NULL);
-}
-
 /*
  * AB.TIMER [timeout]
 */
@@ -636,13 +634,126 @@ int TimerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
   // read timeout
   mstime_t t = (mstime_t)atoi(RedisModule_StringPtrLen(argv[1], NULL));
-  if (t > 100) {
-    timeout = t;
+  // interval > 3s
+  if (t >= 3) {
+    RMUtilTimer_SetInterval(interval_timer, (struct timespec){.tv_sec = 0, .tv_nsec = t * 1000000000 });
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
   }
   return RedisModule_WrongArity(ctx);
 
 }
+
+void aggregate(RedisModuleCtx *ctx, RedisModuleString *key, long long *count, long long *sum, long long *min, long long *max, double *mean, double *std) {
+  *count = *sum = *min = *max = 0;
+  *mean = *std = 0.0;
+  double s = 0;
+  int i;
+  RedisModuleString *cursor = C2S(ctx, "0");
+  do {
+    RedisModuleCallReply *zsrep = RedisModule_Call(ctx, "zscan", "sscl", key, cursor, "count", 100);
+    RedisModuleCallReply *c = RedisModule_CallReplyArrayElement(zsrep, 0);
+    RedisModuleCallReply *rep = RedisModule_CallReplyArrayElement(zsrep, 1);
+    cursor = RedisModule_CreateStringFromCallReply(c);
+
+    // RedisModule_Log(ctx, "warning", "cursor %s", RedisModule_StringPtrLen(cursor, NULL));
+    // long long length = RedisModule_CallReplyLength(rep);
+    // RedisModule_Log(ctx, "warning", "length %lld", length);
+    for (i = 0; i < RedisModule_CallReplyLength(rep); i += 2) {
+      RedisModuleCallReply *v = RedisModule_CallReplyArrayElement(rep, i+1);
+      long long score = (long long)atoi(RedisModule_StringPtrLen(RedisModule_CreateStringFromCallReply(v), NULL));
+      // RedisModule_Log(ctx, "warning", "score %lld", score);
+      *count += 1;
+      *sum += score;
+      s = s + 1.0 * (*count - 1) / *count * (score - *mean) * (score - *mean);
+      *mean = *mean + 1.0 * (score - *mean) / *count;
+      if (i == 0) {
+        *min = *max = score;
+      } else {
+        if (score < *min) {
+          *min = score;
+        }
+        if (score > *max) {
+          *max = score;
+        }
+      }
+    }
+  } while(!RMUtil_StringEquals(cursor, C2S(ctx, "0")));
+  if (*count > 1) {
+    *std = sqrt(s / *count - 1);
+  }
+  return;
+}
+
+void TimerHandler(RedisModuleCtx *ctx, void *data) {
+  // RedisModule_Log(ctx, "warning", "aggregate timeout %lds + %ldns", interval_timer->interval.tv_sec, interval_timer->interval.tv_nsec);
+  RedisModule_ThreadSafeContextLock(ctx);
+  RedisModuleCallReply *vrep = RedisModule_Call(ctx, "sort", "ccccccc", "ab:versions", "by", "*", "get", "#", "get", "*->test");
+  // RedisModule_Log(ctx, "warning", "versions %ld", RedisModule_CallReplyLength(vrep));
+  RedisModuleCallReply *trep = RedisModule_Call(ctx, "sort", "ccccccccc", "ab:targets", "by", "*", "get", "#", "get", "*->test", "get", "*->value");
+  // RedisModule_Log(ctx, "warning", "targets %ld", RedisModule_CallReplyLength(trep));
+  int i, j;
+  long long uv, pv, min, max;
+  double mean, std;
+  for (i = 0; i < RedisModule_CallReplyLength(vrep); i += 2) {
+    RedisModuleCallReply *v = RedisModule_CallReplyArrayElement(vrep, i+1);
+    RedisModuleString *vtest = RedisModule_CreateStringFromCallReply(v);
+    // RedisModule_Log(ctx, "warning", "version test name %s", RedisModule_StringPtrLen(vtest, NULL));
+    long long target_count = 0;
+    RedisModuleString *version = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(vrep, i));
+    for (j = 0; j < RedisModule_CallReplyLength(trep); j += 3) {
+      RedisModuleCallReply *t = RedisModule_CallReplyArrayElement(trep, j+1);
+      RedisModuleString *ttest = RedisModule_CreateStringFromCallReply(t);
+      // RedisModule_Log(ctx, "warning", "target test name %s", RedisModule_StringPtrLen(ttest, NULL));
+      RedisModuleString *target = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(trep, j+2));
+      const char *ctarget = RedisModule_StringPtrLen(target, NULL);
+      if (RMUtil_StringEquals(vtest, ttest)) {
+        // RedisModule_Log(ctx, "warning", "version test %s eq target test %s", RedisModule_StringPtrLen(vtest, NULL), RedisModule_StringPtrLen(ttest, NULL));
+        RedisModuleString *track_key = RedisModule_CreateStringPrintf(
+          ctx, "%s:%s:track",
+          RedisModule_StringPtrLen(version, NULL),
+          RedisModule_StringPtrLen(target, NULL)
+        );
+        // RedisModule_Log(ctx, "warning", "aggregate track %s", RedisModule_StringPtrLen(track_key, NULL));
+        aggregate(ctx, track_key, &uv, &pv, &min, &max, &mean, &std);
+        // RedisModule_Log(ctx, "warning", "aggregate track %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+        RedisModule_Call(
+          ctx, "HSET", "sslslslslssss",
+          version,
+          RedisModule_CreateStringPrintf(ctx, "%s:user", ctarget), uv,
+          RedisModule_CreateStringPrintf(ctx, "%s:count", ctarget), pv,
+          RedisModule_CreateStringPrintf(ctx, "%s:min", ctarget), min,
+          RedisModule_CreateStringPrintf(ctx, "%s:max", ctarget), max,
+          RedisModule_CreateStringPrintf(ctx, "%s:mean", ctarget), RedisModule_CreateStringFromDouble(ctx, mean),
+          RedisModule_CreateStringPrintf(ctx, "%s:std", ctarget), RedisModule_CreateStringFromDouble(ctx, std)
+        );
+        // RedisModule_Log(ctx, "warning", "aggregate track save version %s %lld %lld %lld %lld %f %f", RedisModule_StringPtrLen(version, NULL), uv, pv, min, max, mean, std);
+
+        target_count += 1;
+      }
+    }
+    if (target_count > 0) {
+      RedisModuleString *uv_key = RedisModule_CreateStringPrintf(
+        ctx, "%s:uv",
+        RedisModule_StringPtrLen(RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(vrep, i)), NULL)
+      );
+      // RedisModule_Log(ctx, "warning", "aggregate uv %s", RedisModule_StringPtrLen(uv_key, NULL));
+      aggregate(ctx, uv_key, &uv, &pv, &min, &max, &mean, &std);
+      RedisModule_Call(
+        ctx, "HSET", "sclclclclcscs",
+        version,
+        "pv", pv,
+        "uv", uv,
+        "uv:min", min,
+        "uv:max", max,
+        "uv:mean", RedisModule_CreateStringFromDouble(ctx, mean),
+        "uv:std", RedisModule_CreateStringFromDouble(ctx, std)
+      );
+      // RedisModule_Log(ctx, "warning", "aggregate uv %lld %lld %lld %lld %f %f", uv, pv, min, max, mean, std);
+    }
+  }
+  RedisModule_ThreadSafeContextUnlock(ctx);
+}
+
 int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // Register the module itself
@@ -676,7 +787,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   // RMUtil_RegisterReadCmd(ctx, "ab.timer", TimerCommand);
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.timer", TimerCommand);
   // created timer
-  RedisModule_CreateTimer(ctx, timeout, TimerHandler, NULL);
+  interval_timer = RMUtil_NewPeriodicTimer(TimerHandler, NULL, NULL, (struct timespec){.tv_sec = 10, .tv_nsec = 0});
+  // RedisModule_CreateTimer(ctx, timeout, TimerHandler, NULL);
 
   return REDISMODULE_OK;
 }
