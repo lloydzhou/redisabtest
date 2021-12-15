@@ -24,6 +24,12 @@
 ### AB.TRACK [userid] [target inc] [target inc] ...
 > save target for current user
 
+### AB.TRAFFIC varname
+> get pv and uv data by day
+
+### AB.RATE varname
+> get target data by version, and calc ZScore+pValue
+
 ### alias
 
 1. AB.VAR  --> AB.TEST
@@ -50,6 +56,6 @@ AB.TRACK userid target1 1 保存指标 (save target for current user)
 - [x] AB.TARGET (add target for test)
 - [x] AB.TRACK (save user target)
 - [ ] AB.RATE (calc uv + pv + target + min/max/mean/std)
-- [ ] AB.TRAFIC (get pv and uv data by day)
+- [x] AB.TRAFFIC (get pv and uv data by day)
 - [x] using timer to aggregate data for every task
 

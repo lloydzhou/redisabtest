@@ -689,6 +689,40 @@ int LayerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 /*
+ * AB.TRAFFIC testname
+*/
+int TrafficCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+  if (argc != 2) {
+    return RedisModule_WrongArity(ctx);
+  }
+  RedisModule_AutoMemory(ctx);
+  RedisModuleString *test = argv[1];
+
+  size_t MAX = 10000;
+
+  RedisModuleString *days_key = RedisModule_CreateStringPrintf(ctx, "ab:days:%s", RedisModule_StringPtrLen(test, NULL));
+  RedisModuleCallReply *days_rep = RedisModule_Call(ctx, "SORT", "scccllcc", days_key, "BY", "*", "LIMIT", 0, MAX, "GET", "#");
+  RMUTIL_ASSERT_NOERROR(ctx, days_rep);
+
+  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+  int i;
+  for (i = 0; i < RedisModule_CallReplyLength(days_rep); i++) {
+    RedisModuleString *day = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(days_rep, i));
+    RedisModule_ReplyWithString(ctx, day);
+
+    RedisModuleString *day_key = RedisModule_CreateStringPrintf(ctx, "ab:day:%s", RedisModule_StringPtrLen(day, NULL));
+    RedisModuleString *match = RedisModule_CreateStringPrintf(ctx, "%s*", RedisModule_StringPtrLen(test, NULL));
+    // TODO size(version) * size(target) < 1000
+    // RedisModule_Log(ctx, "warning", "HSCAN %s", RedisModule_StringPtrLen(day_key, NULL));
+    RedisModuleCallReply *rep = RedisModule_Call(ctx, "HSCAN", "sccscl", day_key, "0", "MATCH", match, "COUNT", MAX);
+    RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, 1));
+  }
+  RedisModule_ReplySetArrayLength(ctx, i * 2);
+
+  return REDISMODULE_OK;
+}
+
+/*
  * AB.TIMER [timeout]
 */
 int TimerCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -850,6 +884,9 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // register ab.track - using the shortened utility registration macro
   RMUtil_RegisterWriteDenyOOMCmd(ctx, "ab.track", TrackCommand);
+
+  // register ab.traffic - using the shortened utility registration macro
+  RMUtil_RegisterReadCmd(ctx, "ab.traffic", TrafficCommand);
 
   // register ab.timer - using the shortened utility registration macro
   // RMUtil_RegisterReadCmd(ctx, "ab.timer", TimerCommand);

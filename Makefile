@@ -33,7 +33,7 @@ clean:
 	rm -rf *.xo *.so *.o
 
 dev: clean rmutil redisab.so
-	redis-server --port 7777 --loadmodule ./redisab.so
+	redis-server --port 6666 --loadmodule ./redisab.so
 
 build:
 	docker build -t lloydzhou/redisab -f Dockerfile .
