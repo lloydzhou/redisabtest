@@ -105,6 +105,9 @@ int UserVersionCommand(RedisModuleCtx *ctx, RedisModuleString *test, RedisModule
     }
     // RedisModule_Log(ctx, "warning", "hget value %s", RedisModule_StringPtrLen(st, NULL));
   }
+  if (!layer || !type || !weight || !default_value) {
+    return RedisModule_ReplyWithError(ctx, "not valid test");
+  }
   RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(user_id, NULL));
   char seed[] = "0";
   unsigned h = 0;
