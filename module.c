@@ -8,26 +8,62 @@
 
 #define hash(key) (unsigned) murmurhash(key, (uint32_t) strlen(key), (uint32_t) atoi(seed));
 
+#define C2S(ctx, s) RedisModule_CreateString(ctx, s, strlen(s))
+
+
+int ListResponse(RedisModuleCtx *ctx, const char *fmt, ...) {
+  va_list argv;
+  int i = 0;
+  // int argc = 0;
+  RedisModuleString *s;
+  char *c;
+  long long l;
+  unsigned u;
+  va_start(argv, fmt);
+  // RedisModule_Log(ctx, "warning", "fmt %s", fmt);
+  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+  while(*fmt) {
+    // RedisModule_Log(ctx, "warning", "fmt %d %s", i, fmt);
+    switch(*fmt) {
+      case 's':
+        s = va_arg(argv, RedisModuleString*);
+        RedisModule_ReplyWithString(ctx, s);
+        // RedisModule_Log(ctx, "warning", "argv %d %s", i, RedisModule_StringPtrLen(s, NULL));
+        break;
+      case 'c':
+        c = va_arg(argv, char*);
+        RedisModule_ReplyWithSimpleString(ctx, c);
+        // RedisModule_Log(ctx, "warning", "argv %d %s", i, c);
+        break;
+      case 'l':
+        l = va_arg(argv, long long);
+        RedisModule_ReplyWithLongLong(ctx, l);
+        // RedisModule_Log(ctx, "warning", "argv %d %lld", i, l);
+        break;
+      case 'u':
+        u = va_arg(argv, unsigned);
+        RedisModule_ReplyWithLongLong(ctx, u);
+        // RedisModule_Log(ctx, "warning", "argv %d %u", i, u);
+        break;
+      default:
+        break;
+    }
+    fmt++;
+    i++;
+  }
+  RedisModule_ReplySetArrayLength(ctx, i);
+  // RedisModule_Log(ctx, "warning", "argc %d", i);
+  va_end(argv);
+  return REDISMODULE_OK;
+}
 
 int VersionCommandResponse(RedisModuleCtx *ctx, RedisModuleString *name, RedisModuleString *layer, RedisModuleString *type, RedisModuleString *value, unsigned hash) {
 
-  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-  RedisModule_ReplyWithSimpleString(ctx, "name");
-  RedisModule_ReplyWithString(ctx, name);
-  RedisModule_ReplyWithSimpleString(ctx, "layer");
-  RedisModule_ReplyWithString(ctx, layer);
-  RedisModule_ReplyWithSimpleString(ctx, "type");
-  RedisModule_ReplyWithString(ctx, type);
-  RedisModule_ReplyWithSimpleString(ctx, "value");
   if (RMUtil_StringEquals(type, RedisModule_CreateString(ctx, "number", strlen("number")))) {
-    RedisModule_ReplyWithLongLong(ctx, (long long)atoi(RedisModule_StringPtrLen(value, NULL)));
+    return ListResponse(ctx, "cscscsclcu", "name", name, "layer", layer, "type", type, "value", (long long)atoi(RedisModule_StringPtrLen(value, NULL)), "hash", hash);
   } else {
-    RedisModule_ReplyWithString(ctx, value);
+    return ListResponse(ctx, "cscscscscu", "name", name, "layer", layer, "type", type, "value", value, "hash", hash);
   }
-  RedisModule_ReplyWithSimpleString(ctx, "hash");
-  RedisModule_ReplyWithLongLong(ctx, hash);
-  RedisModule_ReplySetArrayLength(ctx, 10);
-  return REDISMODULE_OK;
 }
 
 int UserVersionCommand(RedisModuleCtx *ctx, RedisModuleString *test, RedisModuleString *user_id, long long ts) {
@@ -222,18 +258,8 @@ int TargetCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RMUTIL_ASSERT_NOERROR(ctx, arep);
 
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-
       RedisModule_ReplyWithSimpleString(ctx, "header");
-
-      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-      RedisModule_ReplyWithSimpleString(ctx, "target");
-      RedisModule_ReplyWithSimpleString(ctx, "name");
-      RedisModule_ReplyWithSimpleString(ctx, "test");
-      RedisModule_ReplyWithSimpleString(ctx, "value");
-      RedisModule_ReplyWithSimpleString(ctx, "created");
-      RedisModule_ReplyWithSimpleString(ctx, "updated");
-      RedisModule_ReplySetArrayLength(ctx, 6);
-
+      ListResponse(ctx, "cccccc", "target", "name", "test", "value", "created", "updated");
       RedisModule_ReplyWithSimpleString(ctx, "body");
       RedisModule_ReplyWithCallReply(ctx, arep);
     RedisModule_ReplySetArrayLength(ctx, 4);
@@ -258,16 +284,7 @@ int TargetCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 
       RedisModule_ReplyWithSimpleString(ctx, "header");
-
-      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-      RedisModule_ReplyWithSimpleString(ctx, "target");
-      RedisModule_ReplyWithSimpleString(ctx, "name");
-      RedisModule_ReplyWithSimpleString(ctx, "test");
-      RedisModule_ReplyWithSimpleString(ctx, "value");
-      RedisModule_ReplyWithSimpleString(ctx, "created");
-      RedisModule_ReplyWithSimpleString(ctx, "updated");
-      RedisModule_ReplySetArrayLength(ctx, 6);
-
+      ListResponse(ctx, "cccccc", "target", "name", "test", "value", "created", "updated");
       RedisModule_ReplyWithSimpleString(ctx, "body");
       RedisModule_ReplyWithCallReply(ctx, arep);
     RedisModule_ReplySetArrayLength(ctx, 4);
@@ -344,17 +361,7 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 
       RedisModule_ReplyWithSimpleString(ctx, "header");
-
-      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-      RedisModule_ReplyWithSimpleString(ctx, "version");
-      RedisModule_ReplyWithSimpleString(ctx, "name");
-      RedisModule_ReplyWithSimpleString(ctx, "test");
-      RedisModule_ReplyWithSimpleString(ctx, "value");
-      RedisModule_ReplyWithSimpleString(ctx, "weight");
-      RedisModule_ReplyWithSimpleString(ctx, "created");
-      RedisModule_ReplyWithSimpleString(ctx, "updated");
-      RedisModule_ReplySetArrayLength(ctx, 7);
-
+      ListResponse(ctx, "ccccccc", "version", "name", "test", "value", "weight", "created", "updated");
       RedisModule_ReplyWithSimpleString(ctx, "body");
       RedisModule_ReplyWithCallReply(ctx, arep);
     RedisModule_ReplySetArrayLength(ctx, 4);
@@ -379,17 +386,7 @@ int VersionCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 
       RedisModule_ReplyWithSimpleString(ctx, "header");
-
-      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-      RedisModule_ReplyWithSimpleString(ctx, "version");
-      RedisModule_ReplyWithSimpleString(ctx, "name");
-      RedisModule_ReplyWithSimpleString(ctx, "test");
-      RedisModule_ReplyWithSimpleString(ctx, "value");
-      RedisModule_ReplyWithSimpleString(ctx, "weight");
-      RedisModule_ReplyWithSimpleString(ctx, "created");
-      RedisModule_ReplyWithSimpleString(ctx, "updated");
-      RedisModule_ReplySetArrayLength(ctx, 7);
-
+      ListResponse(ctx, "ccccccc", "version", "name", "test", "value", "weight", "created", "updated");
       RedisModule_ReplyWithSimpleString(ctx, "body");
       RedisModule_ReplyWithCallReply(ctx, arep);
     RedisModule_ReplySetArrayLength(ctx, 4);
@@ -468,16 +465,7 @@ int TestCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
 
       RedisModule_ReplyWithSimpleString(ctx, "header");
-
-      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-      RedisModule_ReplyWithSimpleString(ctx, "test");
-      RedisModule_ReplyWithSimpleString(ctx, "name");
-      RedisModule_ReplyWithSimpleString(ctx, "layer");
-      RedisModule_ReplyWithSimpleString(ctx, "weight");
-      RedisModule_ReplyWithSimpleString(ctx, "created");
-      RedisModule_ReplyWithSimpleString(ctx, "updated");
-      RedisModule_ReplySetArrayLength(ctx, 6);
-
+      ListResponse(ctx, "cccccc", "test", "name", "layer", "weight", "created", "updated");
       RedisModule_ReplyWithSimpleString(ctx, "body");
       RedisModule_ReplyWithCallReply(ctx, arep);
     RedisModule_ReplySetArrayLength(ctx, 4);

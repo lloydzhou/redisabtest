@@ -43,9 +43,9 @@ AB.TARGET 获取所有指标 (get all targets for system)
 
 ## TODO
 
--[x] AB.TARGET (add target for test)
--[ ] AB.TRACK (save user target)
--[ ] AB.RATE (calc uv + pv + target + min/max/mean/std)
--[ ] AB.TRAFIC (get pv and uv data by day)
--[ ] using timer to aggregate data for every task
+- [x] AB.TARGET (add target for test)
+- [ ] AB.TRACK (save user target)
+- [ ] AB.RATE (calc uv + pv + target + min/max/mean/std)
+- [ ] AB.TRAFIC (get pv and uv data by day)
+- [ ] using timer to aggregate data for every task
 
