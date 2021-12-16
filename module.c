@@ -750,7 +750,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 
     RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
-    RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
+    // RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
     RedisModuleCallReply *rep = RedisModule_Call(ctx, "HGETALL", "s", key, "MATCH", "*:*");
     RMUTIL_ASSERT_NOERROR(ctx, rep);
 
@@ -785,7 +785,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     // RedisModule_FreeDict(ctx, vda);
   }
 
-  RedisModule_Log(ctx, "warning", "default version %s", RedisModule_StringPtrLen(default_value, NULL));
+  // RedisModule_Log(ctx, "warning", "default version %s", RedisModule_StringPtrLen(default_value, NULL));
   RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
   for (i = 0; i < RedisModule_CallReplyLength(versions); i += 6) {
     RedisModuleString *value = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 1));
@@ -795,7 +795,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     version_uv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(vd, uv_key, NULL), NULL));
     version_pv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(vd, pv_key, NULL), NULL));
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-    RedisModule_Log(ctx, "warning", "version %s", RedisModule_StringPtrLen(value, NULL));
+    // RedisModule_Log(ctx, "warning", "version %s", RedisModule_StringPtrLen(value, NULL));
     RedisModule_ReplyWithString(ctx, name_key);
     RedisModule_ReplyWithString(ctx, RedisModule_DictGet(vd, name_key, NULL));
     RedisModule_ReplyWithString(ctx, value_key);
@@ -811,8 +811,8 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
     for (j = 0; j < RedisModule_CallReplyLength(targets); j++) {
       RedisModuleString *target = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(targets, j));
-      const char *targetc = RedisModule_StringPtrLen(target, NULL);
-      RedisModule_Log(ctx, "warning", "target %s", targetc);
+      // const char *targetc = RedisModule_StringPtrLen(target, NULL);
+      // RedisModule_Log(ctx, "warning", "target %s", targetc);
       // RedisModule_DictSet(vd, target, td);
       RedisModuleDict *td = RedisModule_DictGet(vd, target, NULL);
       RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
@@ -826,18 +826,13 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
       max = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, max_key, NULL), NULL));
       mean = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, mean_key, NULL), NULL));
       std = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, std_key, NULL), NULL));
-      long long duv = 0, dpv = 0, dmin = 0, dmax = 0;
+      long long duv = 0;
       double dmean = 0.0, dstd = 0.0, drmean = 0.0, drstd = 0.0;
       RedisModuleDict *dvd = RedisModule_DictGet(res, default_value, NULL);
       RedisModuleDict *dtd = RedisModule_DictGet(dvd, target, NULL);
       duv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, uv_key, NULL), NULL));
-      dpv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, pv_key, NULL), NULL));
-      dmin = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, min_key, NULL), NULL));
-      dmax = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, max_key, NULL), NULL));
       dmean = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, mean_key, NULL), NULL));
       dstd = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, std_key, NULL), NULL));
-
-      RedisModuleString *tttt = (RedisModuleString *)RedisModule_DictGet(td, name_key, NULL);
 
       real_mean_std(mean, std, uv, version_uv, &rmean, &rstd);
       real_mean_std(dmean, dstd, duv, version_uv, &drmean, &drstd);
