@@ -2,9 +2,9 @@ FROM redis:alpine as builder
 
 RUN apk add musl-dev gcc make
 
-ADD . /server
+ADD --chown=redis . /server
 
-RUN chown -R redis:redis /server && cd /server && make
+RUN cd /server && make
 
 
 FROM redis:alpine
