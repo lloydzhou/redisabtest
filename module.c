@@ -733,7 +733,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
       RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
       const char *nc = RedisModule_StringPtrLen(n, NULL);
       if (strcspn(nc, ":") == strlen(nc)) {
-        RedisModule_Log(ctx, "warning", "1 %s indexOf ':' %ld", nc, strcspn(nc, ":"));
+        // RedisModule_Log(ctx, "warning", "1 %s indexOf ':' %ld", nc, strcspn(nc, ":"));
         RedisModule_ReplyWithString(ctx, n);
         RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
         count += 2;
@@ -747,7 +747,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
       RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
       const char *nc = RedisModule_StringPtrLen(n, NULL);
       if (strcspn(nc, ":") < strlen(nc)) {
-        RedisModule_Log(ctx, "warning", "2 %s indexOf 'uv:' %ld", nc, strcspn(nc, "uv:"));
+        // RedisModule_Log(ctx, "warning", "2 %s indexOf 'uv:' %ld", nc, strcspn(nc, "uv:"));
         RedisModule_ReplyWithString(ctx, n);
         RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
         count += 2;
