@@ -7,7 +7,7 @@
 #include "./rmutil/test_util.h"
 #include "./rmutil/periodic.c"
 #include "./murmurhash.c"
-
+#include "./zscore.c"
 
 #define hash(key) (unsigned) murmurhash(key, (uint32_t) strlen(key), (uint32_t) atoi(seed));
 
@@ -699,66 +699,180 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_AutoMemory(ctx);
   RedisModuleString *test = argv[1];
 
+  RedisModuleString *test_key = RedisModule_CreateStringPrintf(ctx, "ab:var:%s", RedisModule_StringPtrLen(test, NULL));
+  RedisModuleCallReply *test_rep = RedisModule_Call(ctx, "HGET", "sc", test_key, "default");
+  RMUTIL_ASSERT_NOERROR(ctx, test_rep);
+
+  if (RedisModule_CallReplyType(test_rep) != REDISMODULE_REPLY_STRING){
+    return RedisModule_ReplyWithNull(ctx);
+  }
+  RedisModuleString *default_value = RedisModule_CreateStringFromCallReply(test_rep);
+
   RedisModuleString *version_key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s", RedisModule_StringPtrLen(test, NULL));
-  RedisModuleCallReply *versions = RedisModule_Call(ctx, "SORT", "scccccc", version_key, "BY", "*->created", "GET", "#", "GET", "*->value");
+  RedisModuleCallReply *versions = RedisModule_Call(ctx, "SORT", "scccccccccccccc", version_key, "BY", "*->created", "GET", "#", "GET", "*->value", "GET", "*->name", "GET", "*->weight", "GET", "*->uv:count", "GET", "*->uv:user");
   RMUTIL_ASSERT_NOERROR(ctx, versions);
+
+  if (RedisModule_CallReplyLength(versions) < 1) {
+    return RedisModule_ReplyWithNull(ctx);
+  }
 
   RedisModuleString *target_key = RedisModule_CreateStringPrintf(ctx, "ab:target:%s", RedisModule_StringPtrLen(test, NULL));
   RedisModuleCallReply *targets = RedisModule_Call(ctx, "SORT", "scccc", target_key, "BY", "*->created", "GET", "*->value");
   RMUTIL_ASSERT_NOERROR(ctx, targets);
 
-  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-  RedisModule_ReplyWithSimpleString(ctx, "targets");
-  RedisModule_ReplyWithCallReply(ctx, targets);
-  RedisModule_ReplyWithSimpleString(ctx, "versions");
-  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-  int i = 0, j = 0, count = 0;
-  for (i = 0; i < RedisModule_CallReplyLength(versions); i += 2) {
+  RedisModuleString *name_key = RedisModule_CreateString(ctx, "name", strlen("name"));
+  RedisModuleString *value_key = RedisModule_CreateString(ctx, "value", strlen("value"));
+  RedisModuleString *weight_key = RedisModule_CreateString(ctx, "weight", strlen("weight"));
+  RedisModuleString *pv_key = RedisModule_CreateString(ctx, "pv", strlen("pv"));
+  RedisModuleString *uv_key = RedisModule_CreateString(ctx, "uv", strlen("uv"));
+  RedisModuleString *min_key = RedisModule_CreateString(ctx, "min", strlen("min"));
+  RedisModuleString *max_key = RedisModule_CreateString(ctx, "max", strlen("max"));
+  RedisModuleString *mean_key = RedisModule_CreateString(ctx, "mean", strlen("mean"));
+  RedisModuleString *std_key = RedisModule_CreateString(ctx, "std", strlen("std"));
+
+  // rate_data *res = RedisModule_Calloc(RedisModule_CallReplyLength(versions), sizeof(rate_data));
+  RedisModuleDict *res = RedisModule_CreateDict(ctx);
+  int i = 0, j = 0;
+  for (i = 0; i < RedisModule_CallReplyLength(versions); i += 6) {
     RedisModuleString *value = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 1));
-    // RedisModule_ReplyWithSimpleString(ctx, "version");
-    // RedisModule_ReplyWithString(ctx, value);
+    RedisModuleString *name = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 2));
+    RedisModuleString *weight = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 3));
+    RedisModuleString *pv = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 4));
+    RedisModuleString *uv = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 5));
+
+    RedisModuleDict *vd = RedisModule_CreateDict(ctx);
+    RedisModule_DictSet(vd, name_key, name);
+    RedisModule_DictSet(vd, value_key, value);
+    RedisModule_DictSet(vd, weight_key, weight);
+    RedisModule_DictSet(vd, uv_key, uv);
+    RedisModule_DictSet(vd, pv_key, pv);
+    RedisModule_DictSet(res, value, vd);
+
 
     RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
     RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
-    RedisModuleCallReply *rep = RedisModule_Call(ctx, "HGETALL", "s", key);
+    RedisModuleCallReply *rep = RedisModule_Call(ctx, "HGETALL", "s", key, "MATCH", "*:*");
     RMUTIL_ASSERT_NOERROR(ctx, rep);
-    // RedisModule_ReplyWithSimpleString(ctx, "data");
-    // RedisModule_ReplyWithCallReply(ctx, rep);
 
-    // RedisModule_ReplyWithSimpleString(ctx, "version");
-    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-    RedisModule_ReplyWithString(ctx, value);
-    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-    for (j = 0, count = 0; j < RedisModule_CallReplyLength(rep); j += 2) {
-      RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
-      const char *nc = RedisModule_StringPtrLen(n, NULL);
-      if (strcspn(nc, ":") == strlen(nc)) {
-        // RedisModule_Log(ctx, "warning", "1 %s indexOf ':' %ld", nc, strcspn(nc, ":"));
-        RedisModule_ReplyWithString(ctx, n);
-        RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
-        count += 2;
-      }
+    RedisModuleDict *vda = RedisModule_CreateDict(ctx);
+    for (j = 0; j < RedisModule_CallReplyLength(rep); j += 2) {
+      RedisModule_DictSet(vda,
+        RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j)),
+        RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j+1))
+      );
     }
-    RedisModule_ReplySetArrayLength(ctx, count);
+    for (j = 0; j < RedisModule_CallReplyLength(targets); j++) {
+      RedisModuleString *target = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(targets, j));
+      const char *targetc = RedisModule_StringPtrLen(target, NULL);
+      RedisModuleDict *td = RedisModule_CreateDict(ctx);
 
-    // RedisModule_ReplyWithSimpleString(ctx, "data");
-    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
-    for (j = 0, count = 0; j < RedisModule_CallReplyLength(rep); j += 2) {
-      RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
-      const char *nc = RedisModule_StringPtrLen(n, NULL);
-      if (strcspn(nc, ":") < strlen(nc)) {
-        // RedisModule_Log(ctx, "warning", "2 %s indexOf 'uv:' %ld", nc, strcspn(nc, "uv:"));
-        RedisModule_ReplyWithString(ctx, n);
-        RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
-        count += 2;
-      }
+      RedisModule_DictSet(td, name_key, target);
+      RedisModuleString *uv = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:user", targetc), NULL);
+      RedisModule_DictSet(td, uv_key, uv);
+      RedisModuleString *pv = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:count", targetc), NULL);
+      RedisModule_DictSet(td, pv_key, pv);
+      RedisModuleString *min = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:min", targetc), NULL);
+      RedisModule_DictSet(td, min_key, min);
+      RedisModuleString *max = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:max", targetc), NULL);
+      RedisModule_DictSet(td, max_key, max);
+      RedisModuleString *mean = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:mean", targetc), NULL);
+      RedisModule_DictSet(td, mean_key, mean);
+      RedisModuleString *std = RedisModule_DictGet(vda, RedisModule_CreateStringPrintf(ctx, "%s:std", targetc), NULL);
+      RedisModule_DictSet(td, std_key, std);
+
+      RedisModule_DictSet(vd, target, td);
     }
-    RedisModule_ReplySetArrayLength(ctx, count);
-    RedisModule_ReplySetArrayLength(ctx, 3);
+    // RedisModule_FreeDict(ctx, vda);
   }
-  RedisModule_ReplySetArrayLength(ctx, i / 2);
-  RedisModule_ReplySetArrayLength(ctx, 4);
 
+  RedisModule_Log(ctx, "warning", "default version %s", RedisModule_StringPtrLen(default_value, NULL));
+  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+  for (i = 0; i < RedisModule_CallReplyLength(versions); i += 6) {
+    RedisModuleString *value = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 1));
+    
+    RedisModuleDict *vd = RedisModule_DictGet(res, value, NULL);
+    long long version_uv = 0, version_pv = 0;
+    version_uv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(vd, uv_key, NULL), NULL));
+    version_pv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(vd, pv_key, NULL), NULL));
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    RedisModule_Log(ctx, "warning", "version %s", RedisModule_StringPtrLen(value, NULL));
+    RedisModule_ReplyWithString(ctx, name_key);
+    RedisModule_ReplyWithString(ctx, RedisModule_DictGet(vd, name_key, NULL));
+    RedisModule_ReplyWithString(ctx, value_key);
+    RedisModule_ReplyWithString(ctx, RedisModule_DictGet(vd, value_key, NULL));
+    RedisModule_ReplyWithString(ctx, weight_key);
+    RedisModule_ReplyWithLongLong(ctx, *((long long *)RedisModule_DictGet(vd, weight_key, NULL)));
+    RedisModule_ReplyWithString(ctx, uv_key);
+    RedisModule_ReplyWithLongLong(ctx, version_uv);
+    RedisModule_ReplyWithString(ctx, pv_key);
+    RedisModule_ReplyWithLongLong(ctx, version_pv);
+
+    RedisModule_ReplyWithSimpleString(ctx, "targets");
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (j = 0; j < RedisModule_CallReplyLength(targets); j++) {
+      RedisModuleString *target = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(targets, j));
+      const char *targetc = RedisModule_StringPtrLen(target, NULL);
+      RedisModule_Log(ctx, "warning", "target %s", targetc);
+      // RedisModule_DictSet(vd, target, td);
+      RedisModuleDict *td = RedisModule_DictGet(vd, target, NULL);
+      RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+      RedisModule_ReplyWithString(ctx, name_key);
+      RedisModule_ReplyWithString(ctx, target);
+      long long uv = 0, pv = 0, min = 0, max = 0;
+      double mean = 0.0, std = 0.0, rmean = 0.0, rstd = 0.0;
+      uv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, uv_key, NULL), NULL));
+      pv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, pv_key, NULL), NULL));
+      min = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, min_key, NULL), NULL));
+      max = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, max_key, NULL), NULL));
+      mean = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, mean_key, NULL), NULL));
+      std = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(td, std_key, NULL), NULL));
+      long long duv = 0, dpv = 0, dmin = 0, dmax = 0;
+      double dmean = 0.0, dstd = 0.0, drmean = 0.0, drstd = 0.0;
+      RedisModuleDict *dvd = RedisModule_DictGet(res, default_value, NULL);
+      RedisModuleDict *dtd = RedisModule_DictGet(dvd, target, NULL);
+      duv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, uv_key, NULL), NULL));
+      dpv = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, pv_key, NULL), NULL));
+      dmin = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, min_key, NULL), NULL));
+      dmax = (long long)atoi(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, max_key, NULL), NULL));
+      dmean = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, mean_key, NULL), NULL));
+      dstd = (double)atof(RedisModule_StringPtrLen((RedisModuleString *)RedisModule_DictGet(dtd, std_key, NULL), NULL));
+
+      RedisModuleString *tttt = (RedisModuleString *)RedisModule_DictGet(td, name_key, NULL);
+
+      real_mean_std(mean, std, uv, version_uv, &rmean, &rstd);
+      real_mean_std(dmean, dstd, duv, version_uv, &drmean, &drstd);
+      double z = zscore(rmean, rstd, uv, drmean, drstd, duv);
+      // http://www.statskingdom.com/120MeanNormal2.html
+      double p = 2 * getZPercent(-abs(z));
+
+      RedisModule_ReplyWithSimpleString(ctx, "user");
+      RedisModule_ReplyWithLongLong(ctx, uv);
+      RedisModule_ReplyWithSimpleString(ctx, "total");
+      RedisModule_ReplyWithLongLong(ctx, pv);
+      RedisModule_ReplyWithString(ctx, min_key);
+      RedisModule_ReplyWithLongLong(ctx, min);
+      RedisModule_ReplyWithString(ctx, max_key);
+      RedisModule_ReplyWithLongLong(ctx, max);
+
+      RedisModule_ReplyWithString(ctx, mean_key);
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", mean));
+      RedisModule_ReplyWithString(ctx, std_key);
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", std));
+      RedisModule_ReplyWithSimpleString(ctx, "rmean");
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", rmean));
+      RedisModule_ReplyWithSimpleString(ctx, "rstd");
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", rstd));
+      RedisModule_ReplyWithSimpleString(ctx, "zscore");
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", z));
+      RedisModule_ReplyWithSimpleString(ctx, "pvalue");
+      RedisModule_ReplyWithString(ctx, RedisModule_CreateStringPrintf(ctx, "%f", p));
+
+      RedisModule_ReplySetArrayLength(ctx, 22);
+    }
+    RedisModule_ReplySetArrayLength(ctx, j);
+    RedisModule_ReplySetArrayLength(ctx, 12);
+  }
+  RedisModule_ReplySetArrayLength(ctx, i / 6);
   return REDISMODULE_OK;
 }
 
