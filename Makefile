@@ -41,4 +41,7 @@ build:
 push: build
 	docker push lloydzhou/redisab
 
+run:
+	docker run --rm -p 6379:6379 lloydzhou/redisab
+
 FORCE:
