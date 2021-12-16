@@ -4,7 +4,7 @@ RUN apk add musl-dev gcc make
 
 ADD . /server
 
-RUN cd /server && make
+RUN chown -R redis:redis /server && cd /server && make
 
 
 FROM redis:alpine
