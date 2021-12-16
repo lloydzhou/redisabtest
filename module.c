@@ -13,6 +13,7 @@
 
 #define C2S(ctx, s) RedisModule_CreateString(ctx, s, strlen(s))
 
+
 static struct RMUtilTimer *interval_timer;
 
 
@@ -699,7 +700,7 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModuleString *test = argv[1];
 
   RedisModuleString *version_key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s", RedisModule_StringPtrLen(test, NULL));
-  RedisModuleCallReply *versions = RedisModule_Call(ctx, "SORT", "scccc", version_key, "BY", "*->created", "GET", "*->value");
+  RedisModuleCallReply *versions = RedisModule_Call(ctx, "SORT", "scccccc", version_key, "BY", "*->created", "GET", "#", "GET", "*->value");
   RMUTIL_ASSERT_NOERROR(ctx, versions);
 
   RedisModuleString *target_key = RedisModule_CreateStringPrintf(ctx, "ab:target:%s", RedisModule_StringPtrLen(test, NULL));
@@ -709,20 +710,54 @@ int RateCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
   RedisModule_ReplyWithSimpleString(ctx, "targets");
   RedisModule_ReplyWithCallReply(ctx, targets);
-  int i = 0;
+  RedisModule_ReplyWithSimpleString(ctx, "versions");
+  RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+  int i = 0, j = 0, count = 0;
   for (i = 0; i < RedisModule_CallReplyLength(versions); i += 2) {
     RedisModuleString *value = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(versions, i + 1));
-    RedisModule_ReplyWithSimpleString(ctx, "version");
-    RedisModule_ReplyWithString(ctx, value);
+    // RedisModule_ReplyWithSimpleString(ctx, "version");
+    // RedisModule_ReplyWithString(ctx, value);
 
     RedisModuleString *key = RedisModule_CreateStringPrintf(ctx, "ab:version:%s:%s", RedisModule_StringPtrLen(test, NULL), RedisModule_StringPtrLen(value, NULL));
-    // RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
+    RedisModule_Log(ctx, "warning", "HGETALL %s", RedisModule_StringPtrLen(key, NULL));
     RedisModuleCallReply *rep = RedisModule_Call(ctx, "HGETALL", "s", key);
     RMUTIL_ASSERT_NOERROR(ctx, rep);
-    RedisModule_ReplyWithSimpleString(ctx, "data");
-    RedisModule_ReplyWithCallReply(ctx, rep);
+    // RedisModule_ReplyWithSimpleString(ctx, "data");
+    // RedisModule_ReplyWithCallReply(ctx, rep);
+
+    // RedisModule_ReplyWithSimpleString(ctx, "version");
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    RedisModule_ReplyWithString(ctx, value);
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (j = 0, count = 0; j < RedisModule_CallReplyLength(rep); j += 2) {
+      RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
+      const char *nc = RedisModule_StringPtrLen(n, NULL);
+      if (strcspn(nc, ":") == strlen(nc)) {
+        RedisModule_Log(ctx, "warning", "1 %s indexOf ':' %ld", nc, strcspn(nc, ":"));
+        RedisModule_ReplyWithString(ctx, n);
+        RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
+        count += 2;
+      }
+    }
+    RedisModule_ReplySetArrayLength(ctx, count);
+
+    // RedisModule_ReplyWithSimpleString(ctx, "data");
+    RedisModule_ReplyWithArray(ctx, REDISMODULE_POSTPONED_ARRAY_LEN);
+    for (j = 0, count = 0; j < RedisModule_CallReplyLength(rep); j += 2) {
+      RedisModuleString *n = RedisModule_CreateStringFromCallReply(RedisModule_CallReplyArrayElement(rep, j));
+      const char *nc = RedisModule_StringPtrLen(n, NULL);
+      if (strcspn(nc, ":") < strlen(nc)) {
+        RedisModule_Log(ctx, "warning", "2 %s indexOf 'uv:' %ld", nc, strcspn(nc, "uv:"));
+        RedisModule_ReplyWithString(ctx, n);
+        RedisModule_ReplyWithCallReply(ctx, RedisModule_CallReplyArrayElement(rep, j + 1));
+        count += 2;
+      }
+    }
+    RedisModule_ReplySetArrayLength(ctx, count);
+    RedisModule_ReplySetArrayLength(ctx, 3);
   }
-  RedisModule_ReplySetArrayLength(ctx, 2 + i * 2);
+  RedisModule_ReplySetArrayLength(ctx, i / 2);
+  RedisModule_ReplySetArrayLength(ctx, 4);
 
   return REDISMODULE_OK;
 }
@@ -879,8 +914,8 @@ void TimerHandler(RedisModuleCtx *ctx, void *data) {
       RedisModule_Call(
         ctx, "HSET", "sclclclclcscs",
         version,
-        "pv", pv,
-        "uv", uv,
+        "uv:count", pv,
+        "uv:user", uv,
         "uv:min", min,
         "uv:max", max,
         "uv:mean", RedisModule_CreateStringFromDouble(ctx, mean),
