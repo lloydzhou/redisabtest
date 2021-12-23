@@ -35,6 +35,12 @@
 1. AB.VAR  --> AB.TEST
 2. AB.VALUE  --> AB.VERSION
 
+## [docker](https://hub.docker.com/r/lloydzhou/redisab)
+
+```
+docker run --rm -p 6379:6379 lloydzhou/redisab
+```
+
 ## example
 ```
 AB.LAYER 获取所有的层，包含创建层的时间(get all layers)
